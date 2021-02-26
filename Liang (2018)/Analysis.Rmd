@@ -1,0 +1,71 @@
+---
+title: "Analysis"
+author: "Hai Liang"
+date: "1/18/2021"
+output: word_document
+---
+
+```{r}
+library(dplyr)
+load("diffD.Rdata")
+load("degs.Rdata")
+load("ideology.Rdata")
+load("followings.Rdata")
+
+data = diffD%>%left_join(degs,by=c("uid"="uid","tids"="tids"))%>%
+  left_join(followings,by=c("uid"="uid","tids"="tids"))%>%
+  left_join(ideology,by=c("uid"="uid"))%>%
+  left_join(ideology,by=c("retweeted_uid"="uid"))
+colnames(data)[11:12] = c("ideology_uid","ideology_rtweeted_uid")
+
+# if cross rtweet
+data$cross = ifelse(data$ideology_uid*data$ideology_rtweeted_uid<0,1,0)
+
+# user ideology category
+data$party = ifelse(data$ideology_uid<0,"left","right")
+
+# time order
+data = data %>% group_by(tids) %>% mutate(time_order = 1:n())
+
+table(data$cross)
+head(data)
+```
+
+Formal analysis using full dataset
+
+```{r}
+load("data.Rdata") # full dataset
+
+# by depth
+byD = data%>%dplyr::group_by(depth)%>%dplyr::summarise(cross=sum(cross),
+                                                            N=length(tids),
+                                                            cross_prob = cross/N)
+library(ggplot2)
+ggplot(byD, aes(x=depth, y=cross_prob)) + 
+  geom_line()+
+  geom_point() + ylim(0,0.30) +
+  xlab("传播深度") + ylab("跨意识形态转发比例")
+```
+
+
+```{r}
+library(lme4)
+library(sjPlot)
+library(sjstats)
+#
+fit0 = glmer(cross ~ depth+lg_time+lg_outdegree+following+party+(1|tids), 
+             data=data,family=binomial(link = "logit")) 
+#
+med1 = lmer(lg_outdegree~depth+lg_time+following+party+(1|tids), 
+            data=data)
+#
+med2 = glmer(following~depth+lg_time+lg_outdegree+party+(1|tids), 
+             data=data,family=binomial(link = "logit"))
+```
+
+Use xjPlot to summarize the models
+
+```{r}
+tab_model(fit0,med1,med2,show.est = T,show.ci = F,show.icc = F,show.se = T,show.aic = T,transform = NULL,digits=3)
+```
+

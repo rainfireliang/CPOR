@@ -1,0 +1,319 @@
+---
+title: "Cascading Analysis"
+author: "Hai Liang"
+date: "1/14/2021"
+output: word_document
+---
+
+```{r}
+library(dplyr)
+
+load("retweets.Rdata")
+load("friends.Rdata")
+head(retweets)
+head(friends)
+```
+
+# Reconstructing diffusion network
+
+```{r}
+# sort by tweetid and time (earliest to most recent)
+retweets = arrange(retweets,retweeted_tweetid,time)
+
+# all orginal tweet IDs (retweeted_tweetid)
+RTIDs=unique(retweets$retweeted_tweetid)
+
+# all involved user IDs
+uids = unique(c(retweets$uid,retweets$retweeted_uid))
+
+# only relationships among the involved users will be used to reconstruct diffusion network
+friends <- friends %>%
+  filter(egos%in%uids) %>%
+  filter(followees%in%uids)%>%
+  collect(n=Inf)
+
+```
+
+The following code is used to reconstruct diffusion networks
+
+```{r}
+diffNet <- data.frame() # to store the results
+jj <- 0
+
+for (expl in RTIDs){ 
+  # for every orginal ID, extract all retweets:
+  tpd = retweets[which(retweets$retweeted_tweetid==expl),]
+  
+  # and extract relationships among the involved users:
+  alters <- friends %>%
+    filter(egos %in% tpd$uid) %>%
+    filter(followees %in% tpd$uid) %>%
+    collect(n=Inf)
+  
+  if (nrow(alters)>0){
+    # if there are relationships:
+    dn = merge(alters,tpd[,c('uid','time')],by.x='egos',by.y='uid')
+    dn = merge(dn,tpd[,c('uid','time')],by.x='followees',by.y='uid')
+    dn = dn[which(dn$time.x>dn$time.y),] # if ego retweeted later than their followees.
+    
+    if (nrow(dn)>0){
+      # only if ego retweeted later than their followees, then the followees could be the intermediaries
+      dn = dn %>% dplyr::group_by(egos)%>%dplyr::mutate(n=length(followees),maxt=max(time.y)) 
+      # n indicates how many followees retweeted earlier, maxt indicates which is the most recent one
+      dn = dn[which(dn$time.y==dn$maxt),]
+      dn = dn[,c('egos','followees','time.x','n')]
+      colnames(dn) = c('uid','retweeted_uid','time','n') # for those with intermediaries
+      
+      rest = tpd[which(!tpd$uid %in% dn$uid),c('uid','retweeted_uid','time')] # for those direct retweets
+      rest$n=1
+      
+      tres = rbind(data.frame(dn,stringsAsFactors = F),rest)
+      tres = tres[order(tres$time),]
+    } else {
+      # if dn is NULL, then return as all retweeted directly from the seed
+      tres = tpd[,c('uid','retweeted_uid','time')]
+      tres$n=1
+    }
+    
+  } else {
+    # if there is no following relationship, then return as all retweeted directly from the seed
+    tres = tpd[,c('uid','retweeted_uid','time')]
+    tres$n=1
+  }
+  
+  tres$tids = expl # append the orginal tweet IDs
+  
+  diffNet <- rbind(diffNet,tres)
+  gc()
+  
+  jj = jj+1
+  #print (jj)
+}
+
+save(diffNet,file="diffNet.Rdata")
+head(diffNet)
+```
+
+And then we can calcualte the depth for each retweeters
+
+```{r}
+library(igraph)
+# define a function to cal depth
+
+depth = function(i){
+  # select any diffusion network
+  n = diffNet[diffNet$tids==i,c("retweeted_uid","uid")] # info. from -> to
+  g = simplify(graph.data.frame(n,directed = T))
+  # using igraph to cal network distance in the tree
+  ids=distances(g,mode='out')[1,]
+  df=cbind(i,names(ids),ids)
+  return(df)
+}
+diffD=matrix(ncol=3)
+tids=unique(diffNet$tids)
+for (i in 1:length(tids)){
+  diffD=rbind(diffD,depth(tids[i]))
+  #print(i)
+}
+colnames(diffD)=c('tids','uid','depth')
+
+diffD=data.frame(diffD,stringsAsFactors = F)
+diffD=diffD[!is.na(diffD$uid),]
+diffD$depth=as.numeric(paste(diffD$depth))
+diffD$uid=as.numeric(paste(diffD$uid))
+
+### combine with diffNet
+diffD = diffD %>% right_join(diffNet,by=c("uid"="uid","tids"="tids"))
+save(diffD,file='diffD.Rdata') # diffusion net with depth
+head(diffD)
+```
+
+
+# Estimating political ideology
+
+```{r}
+# need ot reload friends to estimate ideology because we need full followee lists
+load("friends.Rdata")
+dim(friends)
+```
+
+May need to install the package from GitHub
+
+```{r}
+#Sys.setenv("R_REMOTES_NO_ERRORS_FROM_WARNINGS" = "true") # very important otherwise may report errors
+#library(devtools)
+#install_github("pablobarbera/twitter_ideology/pkg/tweetscores",build = FALSE)
+```
+
+
+```{r}
+# load package: https://github.com/pablobarbera/twitter_ideology
+library(tweetscores)
+# all egos
+egos = unique(friends$egos)
+length(egos)
+```
+
+There are several methods available in this package
+
+```{r}
+# to define a convinient function
+tf=function(i){
+  # i is the ith ego
+  ego=egos[i]
+  # the ith ego's followees
+  fr=friends%>%dplyr::filter(egos==ego)%>%dplyr::select(followees)
+  fr=unique(fr$followees)
+  fr=fr[!is.na(fr)]
+  # the default of below method is MCMC, here we use MLE - maximum likelihood estimation, which is faster
+  results <- tryCatch(estimateIdeology(ego, fr, method="MLE",verbose=F), error=function(e) e)
+  if (!inherits(results, "error")){
+    ido <- as.numeric(summary(results)[2,1])
+  } else {
+    ido <- NA
+  }
+  return(ido)
+}
+# try the first ego
+tf(1)
+```
+theta = -1.46 is the ideological value, then we calculate all egos
+
+```{r}
+# apply the function to the 36870 egos (this will be very slow)
+# ideology = sapply(1:length(egos),tf)
+# ideology = data.frame(egos,ideology,stringsAsFactors = F)
+# save(ideology,file="ideology.Rdata")
+```
+
+We use parrale method
+
+```{r}
+library(tweetscores)
+library(doParallel)
+
+detectCores() #64 cores in my server
+cl <- makeCluster(48) #set a number smaller than available
+registerDoParallel(cl)
+
+ideos <- foreach(i=1:length(egos), .combine=rbind,.packages=c("tweetscores","dplyr")) %dopar% {
+  idy <- tf(i)
+  return(c(egos[i],idy))
+}
+
+stopCluster(cl)
+
+ideology = as.data.frame(ideos)
+colnames(ideology) = c("uid","ideology_scores")
+```
+
+Describe:
+
+```{r}
+head(ideology)
+hist(ideology$ideology)
+```
+
+# To calculate network mediators
+
+```{r}
+#package and datasets required
+#library(igraph)
+#load("friends.Rdata")
+#load("diffD.Rdata")
+```
+
+Functions:
+
+```{r}
+# degrees
+connectedness=function(tid){
+  actors=unique(c(diffD$retweeted_uid[diffD$tids==tid],
+                  diffD$uid[diffD$tids==tid]))
+  
+  net <- friends %>%
+    filter(egos%in%actors) %>%
+    filter(followees%in%actors)%>%
+    collect(n=Inf)
+  g=graph.data.frame(net,vertices = paste(actors),directed = T)
+  g=simplify(g)
+  
+  out_degree=degree(g,mode='out') # followed
+  in_degree=degree(g,mode='in') # be followed
+  
+  res = data.frame(cbind(out_degree,in_degree))
+  res$actors = as.numeric(names(out_degree))
+  res$tids = tid
+  
+  return (res)
+}
+
+library(doParallel)
+cl <- makeCluster(48)
+registerDoParallel(cl)
+
+tids=unique(diffD$tids)
+degs <- foreach(i=1:length(tids),.combine = rbind,.packages=c("igraph","dplyr"))%dopar%{
+  res<-connectedness(tids[i])
+  return (res)
+  gc()
+}
+stopCluster(cl)
+colnames(degs)[3] = "uid"
+degs$uid = as.numeric(degs$uid)
+save(degs,file='degs.Rdata')
+```
+
+Following OR NOT
+
+```{r}
+# following or not
+#load("retweets.Rdata")
+seedUIDs = retweets[,c("retweeted_tweetid","retweeted_uid")]
+seedUIDs = seedUIDs[!duplicated(seedUIDs),]
+colnames(seedUIDs) = c("tids","seedUID")
+diffD = diffD%>%left_join(seedUIDs,by="tids")
+save(diffD,file="diffD.Rdata")
+
+ids = as.numeric(unique(diffD$seedUID))
+fllw = function(id){
+  followers = friends %>%
+    filter(followees==id) %>%
+    collect(n=Inf)
+  actors=diffD$uid[diffD$seedUID==id]
+  tids=diffD$tids[diffD$seedUID==id]
+  following = actors%in%followers$egos
+  
+  x = data.frame(actors,following,tids,stringsAsFactors = F)
+  return (x)
+}
+followings = data.frame()
+for (id in ids){
+  res=fllw(id)
+  followings=rbind(followings,res)
+  #print(which(ids==id))
+}
+
+# reomvoe duplicates
+followings = followings[!duplicated(followings),]
+colnames(followings) = c("uid","following","tids")
+followings$uid = as.numeric(followings$uid)
+save(followings,file='followings.Rdata')
+```
+
+# TO combine the two datasets: diffnet + ideology to form Table 1
+
+```{r}
+data = diffD%>%left_join(degs,by=c("uid"="uid","tids"="tids"))%>%
+  left_join(followings,by=c("uid"="uid","tids"="tids"))%>%
+  left_join(ideology,by=c("uid"="uid"))%>%
+  left_join(ideology,by=c("retweeted_uid"="uid"))
+colnames(data)[11:12] = c("ideology_uid","ideology_rtweeted_uid")
+
+# if cross rtweet
+data$cross = ifelse(data$ideology_uid*data$ideology_rtweeted_uid<0,1,0)
+table(data$cross)
+head(data)
+```
+
+
