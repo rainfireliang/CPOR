@@ -1,0 +1,136 @@
+---
+title: "Descriptive"
+author: "Hai Liang"
+date: "10/14/2020"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyr)
+library(igraph)
+library(ggplot2)
+```
+
+
+首先
+
+```{r}
+load("disnet.Rdata") # discussion network in 14 weeks
+load("semantic.Rdata") # semantic similarity network in 14 weeks
+load("interpretative.Rdata") # interpretative frame network in 14 weeks
+```
+
+normalize
+
+```{r}
+structure_dis<-function(i){
+  # extract data in week i
+	interaction <- disnet[[i]]
+	
+	# remove inactive users
+	interaction <- interaction[rowSums(interaction)>0,rowSums(interaction)>0]
+	
+	# covert matrix to igraph object
+	net<-simplify(graph_from_adjacency_matrix(interaction,mode="directed")) 
+	
+	n<-length(V(net))#number of nodes
+	e<-length(E(net))#number of edges
+
+	cc<-transitivity(net) #clustering coefficient
+	density<-graph.density(net) #density
+	modularity<-modularity(walktrap.community(net)) # modularity
+	r=c(n,e,cc,density,modularity)
+	return(r)
+}
+```
+
+
+```{r}
+dis<-sapply(c(1:14),structure_dis)
+dis<-as.data.frame(t(dis))
+colnames(dis)<-c("n","e","dis_cc","dis_density","dis_modularity")
+```
+
+
+```{r}
+dis$week = c(1:14)
+dis_long = pivot_longer(dis[,3:6],-week,names_to = "indicator",values_to = "value")
+
+ggplot(data=dis_long,
+       aes(x=week, y=value, colour=indicator)) +
+       geom_line()
+```
+
+
+```{r}
+structure_ss<-function(i){
+  # extract semantic network in week i
+	matr<-semantic[[i]]
+  
+	# dichotomize 
+	matr[matr<0.15]<-0
+	matr[matr>=0.15]<-1
+	
+	matr<-matr[c(rowSums(matr)!=0),c(colSums(matr)!=0)]
+	matr<-simplify(graph.adjacency(matr,mode="undirected"))
+
+	cc<-transitivity(matr)
+	density<-graph.density(matr)
+	modularity<-modularity(walktrap.community(matr))
+	r=c(cc,density,modularity)
+	return(r)
+}	
+
+ss<-sapply(c(1:14),structure_ss)
+ss<-as.data.frame(t(ss))
+colnames(ss)<-c("ss_cc","ss_density","ss_modularity")
+```
+
+```{r}
+ss$week = c(1:14)
+ss_long = pivot_longer(ss,-week,names_to = "indicator",values_to = "value")
+
+ggplot(data=ss_long,
+       aes(x=week, y=value, colour=indicator)) +
+       geom_line()
+
+```
+
+
+
+```{r}
+structure_in<-function(i){
+	matr<-interpretative[[i]]
+
+	matr[matr>0]<-1
+	matr<-matr[c(rowSums(matr)!=0),c(colSums(matr)!=0)]
+	matr<-simplify(graph.adjacency(matr,mode="undirected"))
+
+	cc<-transitivity(matr)
+	density<-graph.density(matr)
+  modularity<-modularity(walktrap.community(matr)) 
+	return(c(cc,density,modularity))
+}	
+inn=sapply(1:14,structure_in)
+inn<-as.data.frame(t(inn))
+colnames(inn)<-c("in_cc","in_density","in_modularity")
+```
+
+
+```{r}
+inn$week = c(1:14)
+inn_long = pivot_longer(inn,-week,names_to = "indicator",values_to = "value")
+
+ggplot(data=inn_long,
+       aes(x=week, y=value, colour=indicator)) +
+       geom_line()
+
+```

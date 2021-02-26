@@ -1,0 +1,172 @@
+---
+title: "Interpretative"
+author: "Hai Liang"
+date: "10/17/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load library
+
+```{r}
+library(RSiena)
+```
+
+Load datasets
+
+```{r}
+load("user.Rdata")
+load("activity.Rdata")
+load("attribute.Rdata") #ideology and other attributes
+load("disnet_all4.Rdata")
+load("bipnet_all4.Rdata")
+```
+
+Estimate effects between two consective periods. Set t=1 to estimate effects between period 1 and period 2.
+
+```{r}
+t=1 #time period
+```
+
+There are 341 participants in periods 1&2.
+
+```{r}
+participants<-c(user[[t]],user[[t+1]])[duplicated(c(user[[t]],user[[t+1]]))]
+```
+
+Prepare attribute data for the participants
+
+```{r}
+attr<-attribute[which(attribute$participant%in%participants),c("participant","leanR")]
+attr<-attr[order(attr[,1]),]
+attr$ideology[attr$leanR=="right"]=1
+attr$ideology[attr$leanR=="central"]=2
+attr$ideology[attr$leanR=="left"]=3
+```
+
+Read the discussion networks in periods 1&2:
+
+```{r}
+dis1 <- as.matrix(disnet[[t]])[rownames(disnet[[t]]) %in% participants,colnames(disnet[[t]]) %in% participants]
+dis2 <- as.matrix(disnet[[t+1]])[rownames(disnet[[t+1]]) %in% participants,colnames(disnet[[t+1]]) %in% participants]
+```
+
+Dichotomize the networks into unweighted networks:
+
+```{r}
+min=9
+max=10000
+
+dis1[dis1<min | dis1>=max]=0
+dis2[dis2<min | dis2>=max]=0
+
+dis1[dis1>=min]=1
+dis2[dis2>=min]=1
+```
+
+Read the interpretative framework networks in period2 1&2:
+
+```{r}
+bipnet1<-as.matrix(bipnet[[t]])[rownames(bipnet[[t]]) %in% participants,]
+bipnet2<-as.matrix(bipnet[[t+1]])[rownames(bipnet[[t+1]]) %in% participants,]
+```
+
+Select the top 50 edges (word-coocurrence):
+
+```{r}
+y=as.data.frame(colSums(bipnet1)+colSums(bipnet2))
+y[,2]=rownames(y)
+y=y[order(y[,1],decreasing=T),]
+namelist<-rownames(y)[1:50]
+
+bipnet1<-bipnet1[,colnames(bipnet1)%in% namelist]
+bipnet2<-bipnet2[,colnames(bipnet2)%in% namelist]
+```
+
+Dichotomize the networks into unweighted networks:
+
+```{r}
+cut=1
+bipnet1[bipnet1<cut]=0
+bipnet2[bipnet2<cut]=0
+
+bipnet1[bipnet1>=cut]=1
+bipnet2[bipnet2>=cut]=1
+```
+
+Set bipartite network object:
+
+```{r}
+# find out number of nodes in nodesets:
+nrUsers <- dim(bipnet1)[1]
+nrEdges <- dim(bipnet1)[2]
+
+# define different node sets:
+Users <- sienaNodeSet(nrUsers, nodeSetName="Users")
+Edges <- sienaNodeSet(nrEdges, nodeSetName="Edges")
+```
+
+Prepare objects for SIENA estimations:
+
+```{r}
+# identify dependent variables for the analysis;
+# start with bipartite network:
+wordassc <- sienaNet(array(c(bipnet1,bipnet2),dim=c(nrUsers,nrEdges,2)),"bipartite",nodeSet=c("Users","Edges"))
+
+# now add the normal network:
+dis <- sienaNet(array(c(dis1, dis2),dim=c(nrUsers,nrUsers,2)),nodeSet="Users")
+
+# covariates
+ideology <- coCovar(attr$ideology,nodeSet="Users")
+activity <- coCovar(sqrt(activity[activity$sender%in%participants,t+2]), nodeSet="Users")
+
+# combine data for the analysis:
+bipData <- sienaDataCreate(dis,wordassc,ideology,activity,nodeSets=list(Users,Edges))
+```
+
+Model specification: choose statistics (mechanisms) to estimate
+
+```{r}
+# get effects table for model specification:
+bipEffects <- getEffects(bipData)
+
+# generate initial descriptive outputfile:
+# print01Report(bipData,bipEffects,modelname="Bipartite-illustration")
+
+# Take a look at the generated output file "Bipartite-illustration.out"
+# to see how RSiena interpreted the directives provided.
+
+# Specify the model:
+bipEffects <- includeEffects(bipEffects,transTrip,inPop,name="dis")
+bipEffects <- includeEffects(bipEffects,sameX,interaction1="ideology")
+bipEffects <- includeEffects(bipEffects,from,name="dis",interaction1="wordassc")
+bipEffects <- includeEffects(bipEffects,egoX,altX,name="dis",interaction1="activity")
+
+bipEffects <- includeEffects(bipEffects,inPop,outInAss,name="wordassc")
+bipEffects <- includeEffects(bipEffects,to,outActIntn,name="wordassc",interaction1="dis")
+bipEffects <- includeEffects(bipEffects,sameWXClosure,name="wordassc",interaction1="dis",interaction2 = "ideology")
+bipEffects <- includeEffects(bipEffects,toSameX,name="wordassc",interaction1="dis",interaction2="ideology")
+
+
+# Create model object:
+bipModel <- sienaModelCreate(useStdInits=FALSE,projname='bipartite-Glasgow-results',cond=F)
+bipModel
+```
+
+Estimation
+
+```{r}
+# Estimate model:
+bipResults <- siena07(bipModel,data=bipData,effects=bipEffects,useCluster=T, initC=T,
+                      nbrNodes=6,batch=T,verbose=F,returnDeps=TRUE)
+
+bipModel <- sienaModelCreate(useStdInits=FALSE,projname='bipartite-Glasgow-results',cond=F,nsub=4,n3=6000,firstg=0.1)
+
+bipResults <- siena07(bipModel,data=bipData,effects=bipEffects,
+                      prevAns = bipResults,
+                      useCluster=T, initC=T,nbrNodes=6,batch=T,verbose=F,returnDeps=TRUE)
+bipResults
+```

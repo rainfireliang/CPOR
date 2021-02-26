@@ -1,0 +1,142 @@
+---
+title: "Semantic"
+author: "Hai Liang"
+date: "10/15/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load library
+
+```{r}
+library(RSiena)
+```
+
+Load dataset
+
+```{r}
+load("user.Rdata") # participants in the 4 periods
+load("activity.Rdata") # number of posts in the 4 periods for each user
+load("attribute.Rdata") #ideology and other attributes
+load("disnet_all4.Rdata") # discussion network matrix in the 4 periods
+load("semantic_all4_directless.Rdata") # semantic similarity matrix in the 4 periods
+```
+
+Estimate effects between two consective periods. Set t=1 to estimate effects between period 1 and period 2.
+
+```{r}
+t=1 #time period
+```
+
+There are 341 participants in periods 1&2.
+
+```{r}
+participants<-c(user[[t]],user[[t+1]])[duplicated(c(user[[t]],user[[t+1]]))]
+```
+
+Prepare attribute data for the participants
+
+```{r}
+attr<-attribute[which(attribute$participant%in%participants),c("participant","leanR")]
+attr<-attr[order(attr[,1]),] # sort by participants name
+attr$ideology[attr$leanR=="right"]=1
+attr$ideology[attr$leanR=="central"]=2
+attr$ideology[attr$leanR=="left"]=3
+```
+
+Read the discussion networks in periods 1&2:
+
+```{r}
+dis1 <- as.matrix(disnet[[t]])[rownames(disnet[[t]]) %in% participants,colnames(disnet[[t]]) %in% participants]
+dis2 <- as.matrix(disnet[[t+1]])[rownames(disnet[[t+1]]) %in% participants,colnames(disnet[[t+1]]) %in% participants]
+```
+
+Dichotomize the networks into unweighted networks:
+
+```{r}
+min=9
+max=10000
+
+dis1[dis1<min | dis1>=max]=0
+dis2[dis2<min | dis2>=max]=0
+
+dis1[dis1>=min]=1
+dis2[dis2>=min]=1
+```
+
+Read the semantic similarity networks in period2 1&2:
+
+```{r}
+ss1 <- as.matrix(semantic[[t]])[rownames(semantic[[t]]) %in% participants,colnames(semantic[[t]]) %in% participants]
+ss2 <- as.matrix(semantic[[t+1]])[rownames(semantic[[t+1]]) %in% participants,colnames(semantic[[t+1]]) %in% participants]
+```
+
+Dichotomize the networks into unweighted networks:
+
+```{r}
+cut=0.34
+
+ss1[ss1<cut]=0
+ss2[ss2<cut]=0
+
+ss1[ss1>=cut]=1
+ss2[ss2>=cut]=1
+```
+
+Prepare objects for SIENA estimations:
+
+```{r}
+# Identify dependent variables for the analysis;
+ss <- sienaNet(array(c(ss1,ss2), dim=c(nrow(dis1),ncol(dis1),2)))
+dis <- sienaNet(array(c(dis1,dis2), dim=c(nrow(dis1),ncol(dis1),2)))
+
+# Identify constant covariate:
+ideology <- coCovar(attr$ideology)
+activity <- coCovar(sqrt(activity[which(activity$sender%in%participants),t+2]))
+
+# Combine data for the analysis:
+MutiplexData <- sienaDataCreate(dis,ss,ideology,activity)
+```
+
+Model specification: choose statistics (mechanisms) to estimate
+
+```{r}
+# Get effects table for model specification:
+MutiplexEffects <- getEffects(MutiplexData) # by defaut the model includes rate, degree, reciprocity effects
+
+# transitivity and 3-cycle effects for the evolution of SS and DIS:
+MutiplexEffects <- includeEffects(MutiplexEffects,transTriads,inPop,name="ss") # add 3-cycle for ss
+MutiplexEffects <- includeEffects(MutiplexEffects,transTrip,inPop,name="dis") # add 3-cycle for dis
+
+# Include main effects of the dependent networks on each other's evolution:
+MutiplexEffects <- includeEffects(MutiplexEffects,crprod,name="ss",interaction1="dis")
+MutiplexEffects <- includeEffects(MutiplexEffects,crprod,name="dis",interaction1="ss")
+
+# include daydic interaction effect within versus between effect
+MutiplexEffects <- includeEffects(MutiplexEffects,sameX,name="ss",interaction1="ideology")
+MutiplexEffects <- includeEffects(MutiplexEffects,sameX,name="dis",interaction1="ideology")
+MutiplexEffects <- includeInteraction(MutiplexEffects,sameX,crprod,name="ss",interaction1=c("ideology","dis"))
+MutiplexEffects <- includeEffects(MutiplexEffects,egoX,altX,name="dis",interaction1="activity")
+
+# Create model object:
+MutiplexModel <- sienaModelCreate(cond=FALSE,projname="Multiplex-illustration",useStdInits=TRUE)
+
+MutiplexEffects
+```
+
+Estimation
+
+```{r}
+# Estimate model:
+MutiplexResults <- siena07(MutiplexModel,data=MutiplexData,effects=MutiplexEffects,useCluster=T, initC=T,
+                           nbrNodes=6,batch=T,verbose=F,returnDeps=TRUE)
+# make sure the all convergence ratio < 0.10
+MutiplexModel <- sienaModelCreate(cond=FALSE,projname="Multiplex-illustration",useStdInits=F,n3=5000)
+MutiplexResults <- siena07(MutiplexModel,data=MutiplexData,effects=MutiplexEffects,prevAns = MutiplexResults,
+                           useCluster=T, initC=T,nbrNodes=6,batch=T,verbose=F,returnDeps=TRUE)
+MutiplexResults
+```
+
