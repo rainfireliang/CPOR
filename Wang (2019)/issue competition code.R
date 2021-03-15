@@ -97,15 +97,3 @@ fitsur<-systemfit(system,method="SUR")
 summary(fitsur)
 dwtest(main1)
 dwtest(main2)
-
-
-
-
-
-
-
-
-
-
-
-
