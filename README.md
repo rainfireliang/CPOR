@@ -1,3 +1,4 @@
 # CPOR
-Computational Public Opinion Research
+Code for Computational Public Opinion Research
+
 TBA
