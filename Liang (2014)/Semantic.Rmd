@@ -25,7 +25,7 @@ load("disnet_all4.Rdata") # discussion network matrix in the 4 periods
 load("semantic_all4_directless.Rdata") # semantic similarity matrix in the 4 periods
 ```
 
-Estimate effects between two consective periods. Set t=1 to estimate effects between period 1 and period 2.
+Estimate effects between two consecutive periods. Set t=1 to estimate effects between period 1 and period 2.
 
 ```{r}
 t=1 #time period
@@ -105,7 +105,7 @@ Model specification: choose statistics (mechanisms) to estimate
 
 ```{r}
 # Get effects table for model specification:
-MutiplexEffects <- getEffects(MutiplexData) # by defaut the model includes rate, degree, reciprocity effects
+MutiplexEffects <- getEffects(MutiplexData) # by default the model includes rate, degree, reciprocity effects
 
 # transitivity and 3-cycle effects for the evolution of SS and DIS:
 MutiplexEffects <- includeEffects(MutiplexEffects,transTriads,inPop,name="ss") # add 3-cycle for ss
@@ -115,7 +115,7 @@ MutiplexEffects <- includeEffects(MutiplexEffects,transTrip,inPop,name="dis") # 
 MutiplexEffects <- includeEffects(MutiplexEffects,crprod,name="ss",interaction1="dis")
 MutiplexEffects <- includeEffects(MutiplexEffects,crprod,name="dis",interaction1="ss")
 
-# include daydic interaction effect within versus between effect
+# include dyadic interaction effect within versus between effect
 MutiplexEffects <- includeEffects(MutiplexEffects,sameX,name="ss",interaction1="ideology")
 MutiplexEffects <- includeEffects(MutiplexEffects,sameX,name="dis",interaction1="ideology")
 MutiplexEffects <- includeInteraction(MutiplexEffects,sameX,crprod,name="ss",interaction1=c("ideology","dis"))

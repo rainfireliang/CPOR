@@ -25,7 +25,7 @@ load("disnet_all4.Rdata")
 load("bipnet_all4.Rdata")
 ```
 
-Estimate effects between two consective periods. Set t=1 to estimate effects between period 1 and period 2.
+Estimate effects between two consecutive periods. Set t=1 to estimate effects between period 1 and period 2.
 
 ```{r}
 t=1 #time period
