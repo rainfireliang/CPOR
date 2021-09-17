@@ -20,7 +20,7 @@ head(friends)
 # sort by tweetid and time (earliest to most recent)
 retweets = arrange(retweets,retweeted_tweetid,time)
 
-# all orginal tweet IDs (retweeted_tweetid)
+# all original tweet IDs (retweeted_tweetid)
 RTIDs=unique(retweets$retweeted_tweetid)
 
 # all involved user IDs
@@ -41,7 +41,7 @@ diffNet <- data.frame() # to store the results
 jj <- 0
 
 for (expl in RTIDs){ 
-  # for every orginal ID, extract all retweets:
+  # for every original ID, extract all retweets:
   tpd = retweets[which(retweets$retweeted_tweetid==expl),]
   
   # and extract relationships among the involved users:
@@ -81,7 +81,7 @@ for (expl in RTIDs){
     tres$n=1
   }
   
-  tres$tids = expl # append the orginal tweet IDs
+  tres$tids = expl # append the original tweet IDs
   
   diffNet <- rbind(diffNet,tres)
   gc()
@@ -94,7 +94,7 @@ save(diffNet,file="diffNet.Rdata")
 head(diffNet)
 ```
 
-And then we can calcualte the depth for each retweeters
+And then we can calculate the depth for each retweeters
 
 ```{r}
 library(igraph)
@@ -132,7 +132,7 @@ head(diffD)
 # Estimating political ideology
 
 ```{r}
-# need ot reload friends to estimate ideology because we need full followee lists
+# need to reload friends to estimate ideology because we need full followee lists
 load("friends.Rdata")
 dim(friends)
 ```
@@ -157,7 +157,7 @@ length(egos)
 There are several methods available in this package
 
 ```{r}
-# to define a convinient function
+# to define a convenient function
 tf=function(i){
   # i is the ith ego
   ego=egos[i]
@@ -186,7 +186,7 @@ theta = -1.46 is the ideological value, then we calculate all egos
 # save(ideology,file="ideology.Rdata")
 ```
 
-We use parrale method
+We use parallel method
 
 ```{r}
 library(tweetscores)
@@ -211,7 +211,7 @@ Describe:
 
 ```{r}
 head(ideology)
-hist(ideology$ideology)
+hist(ideology$ideology,main = "意识形态直方图",xlab="意识形态",ylab = "频次")
 ```
 
 # To calculate network mediators
@@ -294,7 +294,7 @@ for (id in ids){
   #print(which(ids==id))
 }
 
-# reomvoe duplicates
+# remove duplicates
 followings = followings[!duplicated(followings),]
 colnames(followings) = c("uid","following","tids")
 followings$uid = as.numeric(followings$uid)
