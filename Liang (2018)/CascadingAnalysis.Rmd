@@ -8,8 +8,8 @@ output: word_document
 ```{r}
 library(dplyr)
 
-load("retweets.Rdata")
-load("friends.Rdata")
+load("retweets.Rdata") # download here: https://www.dropbox.com/scl/fi/tzxiyj2cyypewfc82oflz/retweets.Rdata?rlkey=3ejcphvznxe035spm071ecaeh&dl=0
+load("friends.Rdata") # download here: https://www.dropbox.com/scl/fi/zqhe9fvnfe16jcf5ra5rk/friends.Rdata?rlkey=e3k6hqe3ewz6k4ho6t4pz5ygs&dl=0
 head(retweets)
 head(friends)
 ```
